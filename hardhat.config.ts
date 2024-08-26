@@ -43,6 +43,7 @@ import {
   thawTrading,
   cleanWhitelist,
   ownerMint1155,
+  deployFob,
 } from './scripts';
 import { deployCloneFactory } from './scripts/deployCloneFactory';
 
@@ -228,6 +229,38 @@ task('deploy', 'Deploy ERC721M')
     await deploy(tasksArgs, hre);
   });
 
+task('deployFob', 'Deploy FOB')
+  .addParam('name', 'name')
+  .addParam('symbol', 'symbol')
+  .addParam('maxsupply', 'max supply')
+  .addParam('tokenurisuffix', 'token uri suffix', '.json')
+  .addParam('globalwalletlimit', 'global wallet limit', '0')
+  .addParam('timestampexpiryseconds', 'timestamp expiry in seconds', '300')
+  .addOptionalParam(
+    'cosigner',
+    'cosigner address (0x00...000 if not using cosign)',
+    '0x0000000000000000000000000000000000000000',
+  )
+  .addOptionalParam(
+    'mintcurrency',
+    'ERC-20 contract address (if minting with ERC-20)',
+    '0x0000000000000000000000000000000000000000',
+  )
+  .addOptionalParam(
+    'fundreceiver',
+    'The treasury wallet to receive mint fund',
+  )
+  .addOptionalParam(
+    'erc2198royaltyreceiver',
+    'erc2198 royalty receiver address',
+  )
+  .addOptionalParam(
+    'erc2198royaltyfeenumerator',
+    'erc2198 royalty fee numerator',
+  )
+  .addOptionalParam('gaspricegwei', 'Set gas price in Gwei')
+  .addOptionalParam('gaslimit', 'Set maximum gas units to spend on transaction')
+  .setAction(deployFob);
 
 task('deploy1155', 'Deploy ERC1155M')
   .addParam('name', 'name')
