@@ -111,7 +111,7 @@ contract ERC721CM is IERC721M, ERC721ACQueryable, Ownable, ReentrancyGuard {
     /**
      * @dev Returns whether it has enough supply for the given qty.
      */
-    modifier hasSupply(uint256 qty) virtual {
+    modifier hasSupply(uint256 qty) {
         if (totalSupply() + qty > _maxMintableSupply) revert NoSupplyLeft();
         _;
     }

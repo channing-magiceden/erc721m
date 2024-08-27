@@ -112,16 +112,6 @@ contract FOB is ERC721CMRoyalties {
     }
 
     /**
-     *
-     * @dev override hasSupply() modifier for the pack supply counts
-     */
-    modifier hasSupply(uint256 qty) override {
-        if (5 * (totalSupply() + qty) > _maxMintableSupply)
-            revert NoSupplyLeft();
-        _;
-    }
-
-    /**
      * @dev Transfers ownership of the contract to a new account (`newOwner`).
      * Can only be called by the current owner.
      */
