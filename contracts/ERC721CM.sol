@@ -28,6 +28,9 @@ contract ERC721CM is IERC721M, ERC721ACQueryable, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
     using SafeERC20 for IERC20;
 
+    // emitted to force update the metadata of a token on OpenSea
+    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
+
     // Whether this contract is mintable.
     bool private _mintable;
 
@@ -492,6 +495,8 @@ contract ERC721CM is IERC721M, ERC721ACQueryable, Ownable, ReentrancyGuard {
         _stageMintedCountsPerWallet[activeStage][to] += qty;
         _stageMintedCounts[activeStage] += qty;
         _safeMint(to, qty);
+
+        emit BatchMetadataUpdate(totalSupply() - qty, totalSupply());
     }
 
     /**
@@ -552,25 +557,33 @@ contract ERC721CM is IERC721M, ERC721ACQueryable, Ownable, ReentrancyGuard {
         _tokenURISuffix = suffix;
     }
 
+    function _liveArtTokenURI(
+        uint256 tokenId
+    ) internal view returns (string memory) {
+         // Base Mainnet Address
+        address liveArtContract = 0x8Ef109902fa65e3e266B077F527b465e629Ce9a0;
+
+        (bool success, bytes memory data) = liveArtContract.staticcall(
+            abi.encodeWithSignature(
+                "tokenURI(uint256,uint256)",
+                tokenId,
+                totalSupply()
+            )
+        );
+        
+
+        if (success) return abi.decode(data, (string));
+
+        return "";
+    }
+
     /**
      * @dev Returns token URI for a given token id.
      */
     function tokenURI(
         uint256 tokenId
     ) public view override(ERC721A, IERC721A) returns (string memory) {
-        if (!_exists(tokenId)) revert URIQueryForNonexistentToken();
-
-        string memory baseURI = _currentBaseURI;
-        return
-            bytes(baseURI).length != 0
-                ? string(
-                    abi.encodePacked(
-                        baseURI,
-                        _toString(tokenId),
-                        _tokenURISuffix
-                    )
-                )
-                : "";
+        return _liveArtTokenURI(tokenId);
     }
 
     /**
