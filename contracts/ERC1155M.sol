@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./utils/Constants.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "./IERC1155M.sol";
@@ -23,7 +24,13 @@ import "./IERC1155M.sol";
  *  - whitelist
  *  - variable wallet limit
  */
-contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, ReentrancyGuard {
+contract ERC1155M is
+    IERC1155M,
+    ERC1155Supply,
+    ERC2981,
+    Ownable2Step,
+    ReentrancyGuard
+{
     using ECDSA for bytes32;
     using SafeERC20 for IERC20;
 
@@ -50,7 +57,8 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         private _stageMintedCountsPerTokenPerWallet;
 
     // Minted count per stage per token.
-    mapping(uint256 => mapping(uint256 => uint256)) private _stageMintedCountsPerToken;
+    mapping(uint256 => mapping(uint256 => uint256))
+        private _stageMintedCountsPerToken;
 
     // Total mint fee
     uint256 private _totalMintFee;
@@ -64,8 +72,14 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     // Fund receiver
     address public immutable FUND_RECEIVER;
 
-    // Authorized minters
-    mapping(address => bool) private _authorizedMinters;
+    // Current cosmetic collection address
+    address public cosmeticsCollectionAddress =
+        0xC6C03D452906aaD9A364989608d947bAc11E478c;
+
+    // Pull from address for cardbacks
+    address public cardbackSourceAddress;
+
+    uint256 public cardbackTokenId;
 
     constructor(
         string memory collectionName,
@@ -83,7 +97,10 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         }
 
         for (uint256 i = 0; i < globalWalletLimit.length; i++) {
-            if (maxMintableSupply[i] > 0 && globalWalletLimit[i] > maxMintableSupply[i]) {
+            if (
+                maxMintableSupply[i] > 0 &&
+                globalWalletLimit[i] > maxMintableSupply[i]
+            ) {
                 revert GlobalWalletLimitOverflow();
             }
         }
@@ -104,30 +121,27 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
      * @dev Returns whether it has enough supply for the given qty.
      */
     modifier hasSupply(uint256 tokenId, uint256 qty) {
-        if (_maxMintableSupply[tokenId] > 0 && totalSupply(tokenId) + qty > _maxMintableSupply[tokenId]) revert NoSupplyLeft();
+        if (
+            _maxMintableSupply[tokenId] > 0 &&
+            totalSupply(tokenId) + qty > _maxMintableSupply[tokenId]
+        ) revert NoSupplyLeft();
         _;
     }
 
-    /**
-     * @dev Returns whether the msg sender is authorized to mint.
-     */
-    modifier onlyAuthorizedMinter() {
-        if (_authorizedMinters[_msgSender()] != true) revert NotAuthorized();
-        _;
+    function setCosmeticsCollectionAddress(
+        address _cosmeticsCollectionAddress
+    ) external onlyOwner {
+        cosmeticsCollectionAddress = _cosmeticsCollectionAddress;
     }
 
-    /**
-     * @dev Add authorized minter. Can only be called by contract owner.
-     */
-    function addAuthorizedMinter(address minter) external onlyOwner {
-        _authorizedMinters[minter] = true;
+    function setCardbackSourceAddress(
+        address _cardbackSourceAddress
+    ) external onlyOwner {
+        cardbackSourceAddress = _cardbackSourceAddress;
     }
 
-    /**
-     * @dev Remove authorized minter. Can only be called by contract owner.
-     */
-    function removeAuthorizedMinter(address minter) external onlyOwner {
-        _authorizedMinters[minter] = false;
+    function setCardbackTokenId(uint256 _cardbackTokenId) external onlyOwner {
+        cardbackTokenId = _cardbackTokenId;
     }
 
     /**
@@ -199,7 +213,9 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     /**
      * @dev Returns maximum mintable supply per token.
      */
-    function getMaxMintableSupply(uint256 tokenId) external view override returns (uint256) {
+    function getMaxMintableSupply(
+        uint256 tokenId
+    ) external view override returns (uint256) {
         return _maxMintableSupply[tokenId];
     }
 
@@ -213,7 +229,10 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         if (tokenId >= NUM_TOKENS) {
             revert InvalidTokenId();
         }
-        if (_maxMintableSupply[tokenId] != 0 && maxMintableSupply > _maxMintableSupply[tokenId]) {
+        if (
+            _maxMintableSupply[tokenId] != 0 &&
+            maxMintableSupply > _maxMintableSupply[tokenId]
+        ) {
             revert CannotIncreaseMaxMintableSupply();
         }
         if (maxMintableSupply < totalSupply(tokenId)) {
@@ -226,7 +245,9 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     /**
      * @dev Returns global wallet limit. This is the max number of tokens can be minted by one wallet.
      */
-    function getGlobalWalletLimit(uint256 tokenId) external view override returns (uint256) {
+    function getGlobalWalletLimit(
+        uint256 tokenId
+    ) external view override returns (uint256) {
         return _globalWalletLimit[tokenId];
     }
 
@@ -240,14 +261,17 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         if (tokenId >= NUM_TOKENS) {
             revert InvalidTokenId();
         }
-        if (_maxMintableSupply[tokenId] > 0 && globalWalletLimit > _maxMintableSupply[tokenId]) {
+        if (
+            _maxMintableSupply[tokenId] > 0 &&
+            globalWalletLimit > _maxMintableSupply[tokenId]
+        ) {
             revert GlobalWalletLimitOverflow();
         }
         _globalWalletLimit[tokenId] = globalWalletLimit;
         emit SetGlobalWalletLimit(tokenId, globalWalletLimit);
     }
 
-     /**
+    /**
      * @dev Returns number of minted tokens for a given address.
      */
     function totalMintedByAddress(
@@ -255,9 +279,11 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     ) public view virtual override returns (uint256[] memory) {
         uint256[] memory totalMinted = new uint256[](NUM_TOKENS);
         uint256 numStages = _mintStages.length;
-        for (uint256 token = 0; token < NUM_TOKENS; token++ ) {
+        for (uint256 token = 0; token < NUM_TOKENS; token++) {
             for (uint256 stage = 0; stage < numStages; stage++) {
-                totalMinted[token] += _stageMintedCountsPerTokenPerWallet[stage][token][account];
+                totalMinted[token] += _stageMintedCountsPerTokenPerWallet[
+                    stage
+                ][token][account];
             }
         }
         return totalMinted;
@@ -273,7 +299,9 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         uint256 totalMinted = 0;
         uint256 numStages = _mintStages.length;
         for (uint256 i = 0; i < numStages; i++) {
-            totalMinted += _stageMintedCountsPerTokenPerWallet[i][tokenId][account];
+            totalMinted += _stageMintedCountsPerTokenPerWallet[i][tokenId][
+                account
+            ];
         }
         return totalMinted;
     }
@@ -286,13 +314,15 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         address account
     ) internal view virtual returns (uint256[] memory) {
         uint256[] memory totalMinted = new uint256[](NUM_TOKENS);
-        for (uint256 token = 0; token < NUM_TOKENS; token++ ) {
-            totalMinted[token] += _stageMintedCountsPerTokenPerWallet[stage][token][account];
+        for (uint256 token = 0; token < NUM_TOKENS; token++) {
+            totalMinted[token] += _stageMintedCountsPerTokenPerWallet[stage][
+                token
+            ][account];
         }
         return totalMinted;
     }
 
-   /**
+    /**
      * @dev Returns number of stages.
      */
     function getNumberStages() external view override returns (uint256) {
@@ -304,12 +334,20 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
      */
     function getStageInfo(
         uint256 stage
-    ) external view override returns (MintStageInfo memory, uint256[] memory, uint256[] memory) {
+    )
+        external
+        view
+        override
+        returns (MintStageInfo memory, uint256[] memory, uint256[] memory)
+    {
         if (stage >= _mintStages.length) {
             revert InvalidStage();
         }
         uint256[] memory walletMinted = totalMintedByAddress(msg.sender);
-        uint256[] memory stageMinted = totalMintedByStageByAddress(stage, msg.sender);
+        uint256[] memory stageMinted = totalMintedByStageByAddress(
+            stage,
+            msg.sender
+        );
         return (_mintStages[stage], walletMinted, stageMinted);
     }
 
@@ -323,7 +361,7 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     /**
      * @dev Mints token(s).
      *
-     * tokenId - token id 
+     * tokenId - token id
      * qty - number of tokens to mint
      * proof - the merkle proof generated on client side. This applies if using whitelist.
      */
@@ -338,7 +376,7 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
     /**
      * @dev Mints token(s) with limit.
      *
-     * tokenId - token id 
+     * tokenId - token id
      * qty - number of tokens to mint
      * limit - limit for the given minter
      * proof - the merkle proof generated on client side. This applies if using whitelist.
@@ -350,25 +388,6 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         bytes32[] calldata proof
     ) external payable virtual nonReentrant {
         _mintInternal(msg.sender, tokenId, qty, limit, proof);
-    }
-
-    /**
-     * @dev Authorized mints token(s) with limit
-     *
-     * to - the token recipient
-     * tokenId - token id
-     * qty - number of tokens to mint
-     * limit - limit for the given minter
-     * proof - the merkle proof generated on client side. This applies if using whitelist
-     */
-    function authorizedMint(
-        address to,
-        uint256 tokenId,
-        uint32 qty,
-        uint32 limit,
-        bytes32[] calldata proof
-    ) external payable onlyAuthorizedMinter {
-        _mintInternal(to, tokenId, qty, limit, proof);
     }
 
     /**
@@ -394,20 +413,25 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
 
         // Check stage supply if applicable
         if (stage.maxStageSupply[tokenId] > 0) {
-            if (_stageMintedCountsPerToken[activeStage][tokenId] + qty > stage.maxStageSupply[tokenId])
-                revert StageSupplyExceeded();
+            if (
+                _stageMintedCountsPerToken[activeStage][tokenId] + qty >
+                stage.maxStageSupply[tokenId]
+            ) revert StageSupplyExceeded();
         }
 
         // Check global wallet limit if applicable
         if (_globalWalletLimit[tokenId] > 0) {
-            if (totalMintedByTokenByAddress(to, tokenId) + qty > _globalWalletLimit[tokenId])
-                revert WalletGlobalLimitExceeded();
+            if (
+                totalMintedByTokenByAddress(to, tokenId) + qty >
+                _globalWalletLimit[tokenId]
+            ) revert WalletGlobalLimitExceeded();
         }
 
         // Check wallet limit for stage if applicable, limit == 0 means no limit enforced
         if (stage.walletLimit[tokenId] > 0) {
             if (
-                _stageMintedCountsPerTokenPerWallet[activeStage][tokenId][to] + qty >
+                _stageMintedCountsPerTokenPerWallet[activeStage][tokenId][to] +
+                    qty >
                 stage.walletLimit[tokenId]
             ) revert WalletStageLimitExceeded();
         }
@@ -424,7 +448,9 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
             // Verify merkle proof mint limit
             if (
                 limit > 0 &&
-                _stageMintedCountsPerTokenPerWallet[activeStage][tokenId][to] + qty > limit
+                _stageMintedCountsPerTokenPerWallet[activeStage][tokenId][to] +
+                    qty >
+                limit
             ) {
                 revert WalletStageLimitExceeded();
             }
@@ -444,6 +470,15 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         _stageMintedCountsPerTokenPerWallet[activeStage][tokenId][to] += qty;
         _stageMintedCountsPerToken[activeStage][tokenId] += qty;
         _mint(to, tokenId, qty, "");
+
+        // Add cardback transfer logic
+        IERC1155(cosmeticsCollectionAddress).safeTransferFrom(
+            cardbackSourceAddress,
+            to,
+            cardbackTokenId,
+            qty,
+            ""
+        );
     }
 
     /**
@@ -583,12 +618,15 @@ contract ERC1155M is IERC1155M, ERC1155Supply, ERC2981, Ownable2Step, Reentrancy
         if (start >= end) revert InvalidStartAndEndTimestamp();
     }
 
-    function _assertValidStageArgsLength(MintStageInfo calldata stageInfo) internal {
-        if (stageInfo.price.length != NUM_TOKENS ||
-        stageInfo.mintFee.length != NUM_TOKENS ||
-        stageInfo.walletLimit.length != NUM_TOKENS ||
-        stageInfo.merkleRoot.length != NUM_TOKENS ||
-        stageInfo.maxStageSupply.length != NUM_TOKENS
+    function _assertValidStageArgsLength(
+        MintStageInfo calldata stageInfo
+    ) internal {
+        if (
+            stageInfo.price.length != NUM_TOKENS ||
+            stageInfo.mintFee.length != NUM_TOKENS ||
+            stageInfo.walletLimit.length != NUM_TOKENS ||
+            stageInfo.merkleRoot.length != NUM_TOKENS ||
+            stageInfo.maxStageSupply.length != NUM_TOKENS
         ) {
             revert InvalidStageArgsLength();
         }
